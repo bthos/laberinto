@@ -19,17 +19,20 @@
     sign: (s, c, w) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Табличка"><rect x="4" y="5" width="16" height="12" rx="1"/><path d="M8 9h8"/><path d="M8 13h5"/><path d="M12 17v3"/></svg>`,
     exit: (s, c, w) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Выход"><path d="M10 4H5v16h5"/><path d="M21 12H9"/><path d="M13 8l-4 4 4 4"/></svg>`,
     chest: (s, c, w) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Ларец"><rect x="3" y="10" width="18" height="10" rx="1"/><path d="M3 10a9 5 0 0 1 18 0"/><path d="M12 13v3"/></svg>`,
+    hospital: (s, c, w) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Госпиталь"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 8v8M8 12h8"/></svg>`,
+    arsenal: (s, c, w) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Арсенал"><circle cx="12" cy="12" r="7"/><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/></svg>`,
     up: '<path d="M12 19V5"/><path d="M6 11l6-6 6 6"/>', down: '<path d="M12 5v14"/><path d="M6 13l6 6 6-6"/>',
     left: '<path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/>', right: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>'
   };
   const arrow = (n) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
-  const objIcon = (k, s, col, w) => k === 'pit' ? IC.pit(s, col.pit || '#B65B48', w) : k === 'sign' ? IC.sign(s, col.sign || '#2E7F78', w) : k === 'exit' ? IC.exit(s, col.exit || '#263238', w) : k === 'chest' ? IC.chest(s, col.chest || '#9A7330', w + 0.2) : '';
+  const objIcon = (k, s, col, w) => k === 'pit' ? IC.pit(s, col.pit || '#B65B48', w) : k === 'sign' ? IC.sign(s, col.sign || '#2E7F78', w) : k === 'exit' ? IC.exit(s, col.exit || '#263238', w) : k === 'chest' ? IC.chest(s, col.chest || '#9A7330', w + 0.2) : k === 'hospital' ? IC.hospital(s, col.hospital || '#B0392F', w) : k === 'arsenal' ? IC.arsenal(s, col.arsenal || '#4B5A2E', w) : '';
 
   /* ---------- мир ---------- */
-  const W = {
+  const SOLO = {
     pass: new Set(['v:1,4','h:1,4','h:1,3','v:1,2','h:0,2','h:0,1','v:1,0','v:2,0','h:2,1','v:2,1','v:2,2','v:3,2','v:4,2','h:3,3','v:4,3','v:5,3','h:5,4','h:5,5','v:5,5','v:4,5','v:3,5','h:1,5','v:1,5','v:2,3','h:2,4','v:3,4','v:4,4','h:0,4','h:3,1','v:4,0','v:5,0','h:5,1','h:5,2','h:4,1']),
     exitEdge: 'v:0,4', exitCell: '0,4', pits: ['2,5', '3,1'], treasure: '5,2', objs: { '4,2': 'sign' }
   };
+  let W = SOLO, D = null, lastMode = 'solo', endPlayer = 0;
   const xy = (k) => k.slice(k.indexOf(':') + 1).split(',').map(Number);
   const edge = (x, y, dx, dy) => dx === 1 ? 'v:' + (x + 1) + ',' + y : dx === -1 ? 'v:' + x + ',' + y : dy === 1 ? 'h:' + x + ',' + (y + 1) : 'h:' + x + ',' + y;
   const shiftEdge = (e, ox, oy) => { const p = xy(e); return e[0] + ':' + (p[0] + ox) + ',' + (p[1] + oy); };
@@ -60,26 +63,40 @@
   function hintOnce(seen, key, text, cur) { if (seen[key]) return cur; seen[key] = 1; return { kind: key, text }; }
 
   function set(patch) { Object.assign(S, patch); persist(); render(); }
-  function persist() { if (S && !S.won) LS.set('lab.save', S); else if (S && S.won) LS.del('lab.save'); }
+  function persist() { if (D) return; if (S && !S.won) LS.set('lab.save', S); else if (S && S.won) LS.del('lab.save'); }
 
   /* ---------- действия ---------- */
+  function done(p) { if (D) p.acted = true; set(p); }
+  function fall(frags, dest, moves, seen, hint, text) {
+    const names = 'АБВГДЕЖЗИКЛМНОП', name = names[frags.length] || ('Л' + frags.length), id = 'f' + frags.length;
+    frags.push({ id, name, anchored: false, placed: false, ox: 0, oy: 0, tx: null, ty: null, tw: dest, cells: { '0,0': 1 }, walls: {}, pass: {}, obj: { '0,0': 'pit' } });
+    hint = hintOnce(seen, 'pit', 'Новый лист «' + name + '» не привязан к карте. Найди знакомые приметы и переключись в «Сопоставлять».', hint);
+    done({ frags, cur: id, lpos: [0, 0], wpos: dest, moves, seen, hint, bump: null, pitFx: true, lastNew: id + ':0,0', msg: { kind: 'pit', text: text.replace('%n', name) } });
+    clearTimeout(step._t); step._t = setTimeout(() => { if (S) set({ pitFx: false }); }, 700);
+  }
   function step(dx, dy) {
     const s = S;
-    if (s.mode !== 'explore' || s.won) return;
+    if (s.mode !== 'explore' || s.won || (D && s.acted)) return;
     const dn = dirName(dx, dy), x = s.wpos[0], y = s.wpos[1], nx = x + dx, ny = y + dy, e = edge(x, y, dx, dy);
     const frags = clone(), f = frag(s.cur, frags), lx = s.lpos[0], ly = s.lpos[1], le = edge(lx, ly, dx, dy);
     const moves = s.moves + 1, seen = Object.assign({}, s.seen);
     let hint = s.hint && s.hint.kind === 'start' ? null : s.hint;
     if (e === W.exitEdge) {
-      if (s.carrying) { set({ moves, won: true, bump: null, hint: null, msg: { kind: 'win', text: 'ты вышел из лабиринта с ларцом!' } }); endView = 'both'; endSaved = false; screen = 'end'; render(); return; }
-      set({ moves, bump: dirKey(dx, dy), bumpN: s.bumpN + 1, hint, msg: { kind: 'exit', text: dn.toLowerCase() + ' — выход. Без ларца уходить рано.' } });
+      if (s.carrying) {
+        if (D) D.winner = D.turn;
+        set({ moves, won: true, bump: null, hint: null, msg: { kind: 'win', text: 'ты вышел из лабиринта с кладом!' } });
+        endView = 'both'; endSaved = false; endPlayer = D ? D.turn : 0; screen = 'end'; render(); return;
+      }
+      done({ moves, bump: dirKey(dx, dy), bumpN: s.bumpN + 1, hint, msg: { kind: 'exit', text: dn.toLowerCase() + ' — выход. Без клада уходить рано.' } });
       return;
     }
     const inside = nx >= 0 && ny >= 0 && nx < 6 && ny < 6;
     if (!inside || !W.pass.has(e)) {
       f.walls[le] = 1;
+      const pi0 = D ? W.pits.indexOf(x + ',' + y) : -1;
+      if (pi0 >= 0) { fall(frags, kv(W.pits[(pi0 + 1) % W.pits.length]), moves, seen, hint, dn.toLowerCase() + ' — стена, но ты в яме: тебя унесло в следующую яму. Начат новый лист «%n».'); return; }
       hint = hintOnce(seen, 'wall', 'Стена записана сама. Ход потрачен — ты остался на месте.', hint);
-      set({ frags, moves, seen, hint, bump: dirKey(dx, dy), bumpN: s.bumpN + 1, msg: { kind: 'wall', text: dn.toLowerCase() + ' — стена. Ты остался на месте.' } });
+      done({ frags, moves, seen, hint, bump: dirKey(dx, dy), bumpN: s.bumpN + 1, msg: { kind: 'wall', text: dn.toLowerCase() + ' — стена. Ты остался на месте.' } });
       return;
     }
     f.pass[le] = 1;
@@ -88,22 +105,110 @@
     const key = nx + ',' + ny, pi = W.pits.indexOf(key);
     if (pi >= 0) {
       f.obj[nk] = 'pit';
-      const dest = kv(W.pits[(pi + 1) % W.pits.length]);
-      const names = 'АБВГДЕЖЗИКЛМНОП', name = names[frags.length] || ('Л' + frags.length), id = 'f' + frags.length;
-      frags.push({ id, name, anchored: false, placed: false, ox: 0, oy: 0, tx: null, ty: null, tw: dest, cells: { '0,0': 1 }, walls: {}, pass: {}, obj: { '0,0': 'pit' } });
-      hint = hintOnce(seen, 'pit', 'Новый лист «' + name + '» не привязан к карте. Найди знакомые приметы и переключись в «Сопоставлять».', hint);
-      set({ frags, cur: id, lpos: [0, 0], wpos: dest, moves, seen, hint, bump: null, pitFx: true, lastNew: id + ':0,0', msg: { kind: 'pit', text: dn.toLowerCase() + ' — яма! Ты провалился и потерял ориентир. Начат новый лист «' + name + '».' } });
-      clearTimeout(step._t); step._t = setTimeout(() => { if (S) set({ pitFx: false }); }, 700);
+      fall(frags, kv(W.pits[(pi + 1) % W.pits.length]), moves, seen, hint, dn.toLowerCase() + ' — яма! Ты провалился и потерял ориентир. Начат новый лист «%n».');
       return;
     }
-    let obj = null;
-    if (key === W.treasure && !s.taken) obj = 'chest'; else if (W.objs[key]) obj = W.objs[key]; else if (key === W.exitCell) obj = 'exit';
+    let obj = null, extra = {}, text = null;
+    if (D ? D.tpos === key : (key === W.treasure && !s.taken)) {
+      obj = 'chest';
+      if (D) {
+        if (s.wounded) text = 'клад! Но ты ранен — унести его не можешь.';
+        else { D.tpos = null; D.carrier = D.turn; extra = { carrying: true, taken: true }; text = 'нашёл клад. Он у тебя — теперь к выходу.'; }
+      }
+    } else if (W.objs[key]) obj = W.objs[key]; else if (key === W.exitCell) obj = 'exit';
+    if (D && obj === 'hospital') extra = { wounded: false };
+    if (D && obj === 'arsenal') extra = { bullets: 3, daggers: 3 };
     if (obj) f.obj[nk] = obj;
-    const texts = { chest: 'ларец! Возьми его.', sign: 'обломок таблички, надпись стёрта.', exit: 'клетка у выхода.' };
-    if (obj === 'chest') hint = hintOnce(seen, 'chest', 'Найти — не значит взять. Нажми «Взять клад», затем вынеси его через выход.', hint);
-    set({ frags, lpos: [nlx, nly], wpos: [nx, ny], moves, seen, hint, bump: null, lastNew: isNew ? s.cur + ':' + nk : s.lastNew, msg: { kind: obj || 'move', text: dn.toLowerCase() + ' — ' + (obj ? texts[obj] : (isNew ? 'проход, пустая клетка.' : 'проход, здесь ты уже был.')) } });
+    const texts = { chest: 'ларец! Возьми его.', sign: 'обломок таблички, надпись стёрта.', exit: 'клетка у выхода.', hospital: s.wounded ? 'госпиталь. Раны залечены.' : 'госпиталь.', arsenal: 'арсенал. Патроны и кинжалы пополнены — по 3.' };
+    if (obj === 'chest' && !D) hint = hintOnce(seen, 'chest', 'Найти — не значит взять. Нажми «Взять клад», затем вынеси его через выход.', hint);
+    done(Object.assign({ frags, lpos: [nlx, nly], wpos: [nx, ny], moves, seen, hint, bump: null, lastNew: isNew ? s.cur + ':' + nk : s.lastNew, msg: { kind: obj === 'chest' && D && !s.wounded ? 'take' : (obj || 'move'), text: text || (dn.toLowerCase() + ' — ' + (obj ? texts[obj] : (isNew ? 'проход, пустая клетка.' : 'проход, здесь ты уже был.'))) } }, extra));
+  }
+
+  /* ---------- дуэль: ведущий — игра ---------- */
+  const NEWS_HURT = 'Тебя ранили! Оружие и клад тебе недоступны, пока не дойдёшь до госпиталя.';
+  function woundOther(o) {
+    o.wounded = true;
+    if (o.carrying) { o.carrying = false; D.tpos = o.wpos.join(','); D.carrier = null; }
+    D.news[1 - D.turn].push(NEWS_HURT + (D.tpos === o.wpos.join(',') ? ' Клад остался там, где ты был ранен.' : ''));
+  }
+  function shoot(dx, dy) {
+    if (!D || S.acted || S.mode !== 'explore') return;
+    if (S.wounded) { set({ aim: false, msg: { kind: 'wall', text: 'ты ранен — стрелять нельзя. Ход не потрачен.' } }); return; }
+    if (S.bullets <= 0) { set({ aim: false, msg: { kind: 'wall', text: 'нет патронов — нужен арсенал. Ход не потрачен.' } }); return; }
+    const o = D.players[1 - D.turn];
+    let x = S.wpos[0], y = S.wpos[1], hit = false;
+    for (;;) {
+      if (o.wpos[0] === x && o.wpos[1] === y) { hit = true; break; }
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx > 5 || ny > 5 || !W.pass.has(edge(x, y, dx, dy))) break;
+      x = nx; y = ny;
+    }
+    if (hit) woundOther(o);
+    done({ bullets: S.bullets - 1, aim: false, moves: S.moves + 1, msg: { kind: hit ? 'pit' : 'wall', text: hit ? 'выстрел ' + dirName(dx, dy).toLowerCase() + ' — попал! Игрок ' + (2 - D.turn) + ' ранен.' : 'выстрел ' + dirName(dx, dy).toLowerCase() + ' — пуля улетела до стены. Никто не ранен.' } });
+  }
+  function dagger() {
+    if (!D || S.acted || S.mode !== 'explore') return;
+    if (S.wounded) { set({ msg: { kind: 'wall', text: 'ты ранен — бить нельзя. Ход не потрачен.' } }); return; }
+    if (S.daggers <= 0) { set({ msg: { kind: 'wall', text: 'нет кинжалов — нужен арсенал. Ход не потрачен.' } }); return; }
+    const o = D.players[1 - D.turn], hit = o.wpos[0] === S.wpos[0] && o.wpos[1] === S.wpos[1];
+    if (hit) woundOther(o);
+    done({ daggers: S.daggers - 1, aim: false, moves: S.moves + 1, msg: { kind: hit ? 'pit' : 'wall', text: hit ? 'удар кинжалом — попал! Игрок ' + (2 - D.turn) + ' ранен.' : 'удар кинжалом — в клетке никого нет.' } });
+  }
+  function skip() {
+    if (!D || S.acted || S.mode !== 'explore') return;
+    const frags = clone(), seen = Object.assign({}, S.seen), pi = W.pits.indexOf(S.wpos.join(','));
+    if (pi >= 0) { fall(frags, kv(W.pits[(pi + 1) % W.pits.length]), S.moves + 1, seen, S.hint, 'ты пропустил ход в яме — тебя унесло в следующую яму. Начат новый лист «%n».'); return; }
+    done({ moves: S.moves + 1, aim: false, msg: { kind: 'move', text: 'ход пропущен.' } });
+  }
+  function genWorld(nPits) {
+    const idx = (x, y) => x + ',' + y, pass = new Set(), seenC = new Set(['0,0']), stack = [[0, 0]];
+    const link = (x, y, nx, ny) => pass.add(nx !== x ? 'v:' + Math.max(x, nx) + ',' + y : 'h:' + x + ',' + Math.max(y, ny));
+    while (stack.length) {
+      const [x, y] = stack[stack.length - 1];
+      const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map((d) => [x + d[0], y + d[1]]).filter((p) => p[0] >= 0 && p[1] >= 0 && p[0] < 6 && p[1] < 6 && !seenC.has(idx(p[0], p[1])));
+      if (!nb.length) { stack.pop(); continue; }
+      const p = nb[Math.floor(Math.random() * nb.length)];
+      link(x, y, p[0], p[1]); seenC.add(idx(p[0], p[1])); stack.push(p);
+    }
+    for (let i = 0; i < 6; i++) { const x = 1 + Math.floor(Math.random() * 5), y = Math.floor(Math.random() * 6); pass.add(Math.random() < .5 ? 'v:' + x + ',' + y : 'h:' + y + ',' + x); }
+    const side = Math.floor(Math.random() * 4), t = Math.floor(Math.random() * 6);
+    const exitEdge = ['v:0,' + t, 'v:6,' + t, 'h:' + t + ',0', 'h:' + t + ',6'][side];
+    const exitCell = [[0, t], [5, t], [t, 0], [t, 5]][side].join(',');
+    const free = []; for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) if (idx(x, y) !== exitCell) free.push(idx(x, y));
+    for (let i = free.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [free[i], free[j]] = [free[j], free[i]]; }
+    const pits = free.splice(0, nPits), treasure = free.splice(0, 1)[0], hosp = free.splice(0, 1)[0], arse = free.splice(0, 1)[0];
+    const objs = {}; objs[hosp] = 'hospital'; objs[arse] = 'arsenal';
+    return { pass, exitEdge, exitCell, pits, treasure, objs, spawn: free };
+  }
+  function newDuel() {
+    const w = genWorld(3);
+    W = w; lastMode = 'duel'; LS.del('lab.save');
+    const players = [0, 1].map((i) => {
+      const c = w.spawn.splice(Math.floor(Math.random() * w.spawn.length), 1)[0], at = kv(c), o = w.objs[c];
+      const st = initialState();
+      st.frags = [{ id: 'f0', name: 'А', anchored: false, placed: false, ox: 0, oy: 0, tx: null, ty: null, tw: at, cells: { '0,0': 1 }, walls: {}, pass: {}, obj: o ? { '0,0': o } : {} }];
+      st.wpos = at; st.lpos = [0, 0]; st.lastNew = 'f0:0,0';
+      st.wounded = false; st.bullets = o === 'arsenal' ? 3 : 0; st.daggers = o === 'arsenal' ? 3 : 0; st.acted = false; st.aim = false;
+      const kind = { hospital: 'госпиталь', arsenal: 'арсенал' }[o] || 'пустая клетка';
+      st.msg = { kind: 'start', text: 'ведущий поставил тебя в клетку: ' + kind + '. Где ты — неизвестно.' };
+      st.hint = { kind: 'start', text: 'Ты не знаешь, где стоишь: лист А не привязан к карте. Ходи, записывай и сопоставляй. Ведущий говорит только о типе клетки.' };
+      return st;
+    });
+    D = { players, turn: 0, tpos: w.treasure, carrier: null, winner: null, news: [[], []] };
+    S = players[0]; screen = 'handoff'; render();
+  }
+  function endTurn() {
+    if (!D || !S.acted || D.winner !== null) return;
+    S.aim = false; S.hint = null;
+    D.turn = 1 - D.turn; S = D.players[D.turn]; S.acted = false; S.mode = 'explore'; S.pitFx = false; S.bump = null;
+    screen = 'handoff'; render();
+  }
+  function ready() {
+    if (D.news[D.turn].length) { S.msg = { kind: 'pit', text: D.news[D.turn].join(' ') }; D.news[D.turn] = []; }
+    screen = 'game'; render();
   }
   function take() {
+    if (D) return;
     if (S.mode !== 'explore' || S.won || S.carrying || S.wpos.join(',') !== W.treasure) return;
     set({ carrying: true, taken: true, hint: S.hint && S.hint.kind === 'chest' ? null : S.hint, msg: { kind: 'take', text: 'ларец у тебя. Теперь — к выходу.' } });
   }
@@ -135,7 +240,7 @@
     const b = bbox(f), p = clampT(f, x - b.minx, y - b.miny); f.tx = p.x; f.ty = p.y;
     set({ frags });
   }
-  const pad = (dx, dy) => { if (S.mode === 'explore') step(dx, dy); else moveKalka(dx, dy); };
+  const pad = (dx, dy) => { if (S.mode === 'explore') { if (D && S.aim) shoot(dx, dy); else step(dx, dy); } else moveKalka(dx, dy); };
   function togglePin() {
     if (!S.sel) return;
     const frags = clone(), f = frag(S.sel, frags), seen = Object.assign({}, S.seen);
@@ -238,9 +343,9 @@
       return `<button type="button" data-act="pick" data-a="${f.id}" ${f.anchored ? 'disabled' : ''} aria-pressed="${isSel}" style="border:${isSel ? '2px solid #4EAAA1' : '1px solid #34504E'};background:${isSel ? '#1F3D3F' : '#182F32'};cursor:${f.anchored ? 'default' : 'pointer'}"><span aria-hidden="true" style="position:relative;display:block;flex:none;width:${b.w * step2}px;height:${b.h * step2}px">${mini}</span><span style="display:flex;flex-direction:column;gap:1px;min-width:0"><span class="serif" style="display:flex;align-items:center;gap:5px;font-size:16px;font-weight:700;line-height:1.1">${f.name}${f.id === s.cur ? '<span title="Ты здесь" style="width:7px;height:7px;border-radius:50%;background:#C59A49;display:inline-block"></span>' : ''}</span><span style="font-size:10.5px;font-weight:600;line-height:1.25;color:${col}">${st}</span></span></button>`;
     }).join('');
 
-    const msgColors = { wall: '#9FB3B0', pit: '#E58A76', chest: '#E2B866', take: '#E2B866', win: '#E2B866', exit: '#7FD0C6', sign: '#7FD0C6' };
+    const msgColors = { hospital: '#E58A76', arsenal: '#E2B866', wall: '#9FB3B0', pit: '#E58A76', chest: '#E2B866', take: '#E2B866', win: '#E2B866', exit: '#7FD0C6', sign: '#7FD0C6' };
     const atTreasure = s.wpos.join(',') === W.treasure && !s.carrying;
-    const canPad = isExplore ? !s.won : hasKalka;
+    const canPad = isExplore ? !s.won && !(D && s.acted) : hasKalka;
     let stA, stB, stC = '#A9BDB9';
     if (isExplore) { stA = 'Лист ' + cur.name + (cur.anchored ? ' · точно на карте' : cur.placed ? ' · гипотеза на карте' : ' · вне карты'); stB = 'клеток записано: ' + Object.keys(cur.cells).length; }
     else if (!sel) { stA = 'Сопоставление'; stB = S.frags.some((f) => !f.anchored) ? 'выбери лист в инвентаре' : 'пока всё на одном листе'; }
@@ -248,14 +353,16 @@
     else { stA = sel.name + ' · калька'; stB = !settings.conflicts ? 'проверка выключена' : nConf ? 'противоречий в записях: ' + nConf : 'противоречий нет — это не подтверждение'; if (settings.conflicts && nConf) stC = '#E58A76'; }
     const tagText = isMatch ? 'Сопоставление · персонаж стоит' : onSheet ? 'Лист ' + cur.name + ' · вне карты' : (S.frags.some((f) => f.placed && !f.anchored) ? 'Карта · рамка и штриховка — место под вопросом' : 'Карта');
     const sub = cur.anchored ? 'Лист привязан к выходу — его место на карте известно.' : cur.placed ? 'Лист закреплён как гипотеза. Проверяй её ходами.' : 'Место листа неизвестно. Сопоставь его с картой.';
-    const pbg = isExplore ? '#2C3A30' : '#1D4441', pbd = isExplore ? '#6B5A33' : '#3E7C75';
+    const aim = D && s.aim && isExplore, pbg = aim ? '#4A2A26' : isExplore ? '#2C3A30' : '#1D4441', pbd = aim ? '#B65B48' : isExplore ? '#6B5A33' : '#3E7C75';
     const pb = (a, n, lbl) => `<button type="button" data-act="${a}" ${canPad ? '' : 'disabled'} aria-label="${lbl}" style="background:${pbg};border:1px solid ${pbd};opacity:${canPad ? 1 : .4}">${arrow(n)}</button>`;
     const sp = (isMatch ? sel : null);
     const selOff = !sel;
     const ops = [[1, '100%'], [0.7, '70%'], [0.4, '40%']].map((o) => `<button type="button" data-act="op" data-a="${o[0]}" aria-pressed="${s.op === o[0]}" style="flex:1 1 0;min-width:0;height:44px;padding:0;font-size:13px;font-weight:600;border-radius:8px;border:1px solid #3B5C5A;background:${s.op === o[0] ? '#4EAAA1' : '#1B3437'};color:${s.op === o[0] ? '#14282B' : '#EFE3C5'}">${o[1]}</button>`).join('');
     const sbtn = (act, label, extra, st) => `<button type="button" data-act="${act}" ${selOff ? 'disabled' : ''} ${extra || ''} style="flex:1 1 0;min-width:0;height:44px;padding:0 6px;font-size:13px;font-weight:500;border-radius:8px;border:1px solid #3B5C5A;background:#1B3437;color:#EFE3C5;opacity:${selOff ? .4 : 1};${st || ''}">${label}</button>`;
     const pinned = sel && sel.placed;
-    const side = isExplore
+    const nxt = D ? 2 - D.turn : 0;
+    const duelSide = D ? `<div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:6px"><div class="card" style="display:flex;flex-direction:column;gap:3px"><span style="font-size:13px;font-weight:600">Лист ${cur.name} · ${s.wounded ? '<span style="color:#E58A76">ранен</span>' : 'здоров'}</span><span style="font-size:11.5px;line-height:1.3;color:#C9D6D3">Пули: ${s.bullets} · кинжалы: ${s.daggers}</span></div>${s.acted ? '' : `<div class="row" style="gap:6px"><button type="button" data-act="aim" aria-pressed="${!!s.aim}" style="flex:1 1 0;min-width:0;height:44px;padding:0 6px;font-size:13px;font-weight:600;border-radius:8px;border:1px solid ${s.aim ? '#B65B48' : '#3B5C5A'};background:${s.aim ? '#B65B48' : '#1B3437'};color:#EFE3C5">Выстрел</button><button type="button" data-act="dagger" style="flex:1 1 0;min-width:0;height:44px;padding:0 6px;font-size:13px;font-weight:600;border-radius:8px;border:1px solid #3B5C5A;background:#1B3437;color:#EFE3C5">Кинжал</button></div><button type="button" data-act="skip" class="btn" style="height:44px">Пропустить ход</button>`}</div>` : '';
+    const side = D && isExplore ? duelSide : isExplore
       ? `<div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:6px"><div class="card" style="height:88px;display:flex;flex-direction:column;gap:3px"><span style="font-size:13px;font-weight:600">Ты на листе ${cur.name}</span><span style="font-size:11.5px;line-height:1.3;color:#C9D6D3">${sub}</span></div><button type="button" data-act="take" ${!atTreasure ? 'disabled' : ''} style="height:44px;font-size:14px;font-weight:600;border-radius:8px;border:0;background:#C59A49;color:#14282B;opacity:${atTreasure ? 1 : .35}">Взять клад</button></div>`
       : `<div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:6px"><div role="group" aria-label="Непрозрачность кальки" style="display:flex;gap:4px;align-items:center"><span style="font-size:12px;color:#A9BDB9;width:34px;flex:none">Слой</span>${ops}</div><div class="row" style="gap:6px">${sbtn('hide', s.hidden ? 'Показать' : 'Скрыть', `aria-pressed="${s.hidden}"`)}${sbtn('away', 'Убрать')}</div><button type="button" data-act="pin" ${selOff ? 'disabled' : ''} style="height:44px;font-size:14px;font-weight:600;border-radius:8px;border:${pinned ? '1px solid #6B5A33' : '0'};background:${pinned ? '#1B3437' : '#C59A49'};color:${pinned ? '#E2B866' : '#14282B'};opacity:${selOff ? .4 : 1}">${pinned ? 'Снять закрепление' : 'Закрепить гипотезу'}</button></div>`;
     const showHint = settings.coach && s.hint && !s.won;
@@ -263,8 +370,8 @@
 
     return `<div class="screen">
 <header style="display:flex;justify-content:space-between;align-items:center;height:44px;gap:12px;flex:none">
-<div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="eyebrow">Экспедиция №1</span><h1 class="serif" style="margin:0;font-size:24px;line-height:1.1">Лабиринт</h1></div>
-<div style="display:flex;align-items:center;gap:10px"><div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:12px;color:#C9D6D3"><span>Ход ${s.moves}</span><span style="color:${s.carrying ? '#E2B866' : '#C9D6D3'};font-weight:${s.carrying ? 600 : 400}">${s.carrying ? 'Несу ларец' : 'Ларец: нет'}</span></div>
+<div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="eyebrow">${D ? 'Дуэль · ход игрока ' + (D.turn + 1) : 'Экспедиция №1'}</span><h1 class="serif" style="margin:0;font-size:24px;line-height:1.1">${D ? 'Игрок ' + (D.turn + 1) : 'Лабиринт'}</h1></div>
+<div style="display:flex;align-items:center;gap:10px"><div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:12px;color:#C9D6D3"><span>Ход ${s.moves}</span><span style="color:${s.carrying ? '#E2B866' : '#C9D6D3'};font-weight:${s.carrying ? 600 : 400}">${D && s.wounded ? 'Ранен · ' : ''}${s.carrying ? 'Несу клад' : 'Клада нет'}</span></div>
 <button type="button" data-act="pause" aria-label="Пауза и настройки" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:#1B3437;border:1px solid #2F4D4C;color:#EFE3C5"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6v12"/><path d="M15 6v12"/></svg></button></div></header>
 <section aria-label="Ответ ведущего" aria-live="polite" class="card" style="display:flex;gap:10px;align-items:flex-start;height:60px;border-color:${s.msg.kind === 'pit' ? '#B65B48' : (s.msg.kind === 'chest' || s.msg.kind === 'take') ? '#C59A49' : '#2F4D4C'};flex:none"><span aria-hidden="true" style="flex:none;width:8px;height:8px;margin-top:6px;border-radius:50%;background:${msgColors[s.msg.kind] || '#7FD0C6'}"></span><p style="margin:0;font-size:13px;line-height:1.35"><span style="font-weight:600">Ведущий:</span> ${s.msg.text}</p></section>
 <div class="sheet" style="box-shadow:${ring},0 12px 32px rgba(0,0,0,.4)"><div class="board" role="group" aria-label="${isMatch ? 'Карта и калька для сопоставления' : onSheet ? 'Отдельный лист без привязки к карте' : 'Карта экспедиции'}">
@@ -276,7 +383,8 @@ ${showHint ? `<div class="toast"><p style="margin:0;flex:1 1 auto;font-size:12.5
 <p role="status" style="margin:-2px 0 0;font-size:12.5px;line-height:18px;color:#C9D6D3;height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none">${stA} · <span style="color:${stC};font-weight:600">${stB}</span></p>
 <div class="inv" role="group" aria-label="Инвентарь листов">${inv}</div>
 <div class="seg" role="group" aria-label="Режим"><button type="button" data-act="explore" aria-pressed="${isExplore}" style="background:${isExplore ? '#C59A49' : 'transparent'};color:${isExplore ? '#14282B' : '#C9D6D3'}">Исследовать</button><button type="button" data-act="match" aria-pressed="${isMatch}" style="background:${isMatch ? '#4EAAA1' : 'transparent'};color:${isMatch ? '#14282B' : '#C9D6D3'}">Сопоставлять</button></div>
-<div style="display:flex;gap:12px;align-items:flex-start;flex:none"><div class="pad" role="group" aria-label="${isExplore ? 'Ход персонажа' : 'Сдвиг кальки на одну клетку'}"><span></span>${pb('up', 'up', 'Вверх')}<span></span>${pb('left', 'left', 'Влево')}<span aria-hidden="true" style="height:44px;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:600;color:${isExplore ? '#E2B866' : '#7FD0C6'};text-transform:uppercase;letter-spacing:.06em">${isExplore ? 'Ход' : 'Калька'}</span>${pb('right', 'right', 'Вправо')}<span></span>${pb('down', 'down', 'Вниз')}<span></span></div>${side}</div>
+<div style="display:flex;gap:12px;align-items:flex-start;flex:none"><div class="pad" role="group" aria-label="${isExplore ? 'Ход персонажа' : 'Сдвиг кальки на одну клетку'}"><span></span>${pb('up', 'up', 'Вверх')}<span></span>${pb('left', 'left', 'Влево')}<span aria-hidden="true" style="height:44px;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:600;color:${aim ? '#E58A76' : isExplore ? '#E2B866' : '#7FD0C6'};text-transform:uppercase;letter-spacing:.06em">${aim ? 'Огонь' : isExplore ? 'Ход' : 'Калька'}</span>${pb('right', 'right', 'Вправо')}<span></span>${pb('down', 'down', 'Вниз')}<span></span></div>${side}</div>
+${D && s.acted ? `<button type="button" data-act="endTurn" class="btn primary" style="flex:none">Передать ход игроку ${nxt}</button>` : ''}
 </div>`;
   }
 
@@ -295,8 +403,19 @@ ${item('#1D4441', '#3E7C75', `<svg ${st} stroke="#7FD0C6"><path d="M12 3l9 5-9 5
 ${item('#2C3A30', '#6B5A33', `<svg ${st} stroke="#E2B866"><rect x="3" y="10" width="18" height="10" rx="1"/><path d="M3 10a9 5 0 0 1 18 0"/></svg>`, 'Вынеси ларец.', 'Найди его, возьми и выйди тем же выходом.')}
 </ol>
 <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+<button type="button" data-act="duel" class="btn" style="height:48px;font-size:15px;border-color:#B65B48">Дуэль вдвоём · на одном экране</button>
 ${saved ? `<button type="button" data-act="resume" class="btn primary">Продолжить · ход ${saved.moves}</button><button type="button" data-act="new" class="btn" style="height:48px;font-size:15px">Начать заново</button>` : `<button type="button" data-act="new" class="btn primary">Начать экспедицию</button>`}
 <p style="margin:0;text-align:center;font-size:12px;color:#A9BDB9">Поле 6 × 6 · стрелки или WASD, на телефоне — крестовина</p></div></div>`;
+  }
+
+  function handoffHTML() {
+    const n = D.turn + 1, first = D.players[0].moves === 0 && D.players[1].moves === 0 && D.turn === 0;
+    return `<div class="screen" style="justify-content:center;align-items:center;text-align:center;gap:18px;padding:32px 24px">
+<span class="eyebrow">Дуэль · ведущий — игра</span>
+<h1 class="serif" style="margin:0;font-size:34px;line-height:1.15">Ход игрока ${n}</h1>
+<p style="margin:0;font-size:14px;line-height:1.5;color:#C9D6D3;max-width:300px">${first ? 'Лабиринт создан и скрыт. Каждый игрок стоит в своей клетке и не знает, где находится. Ходите по очереди, передавая устройство: ведущий говорит только о типе клетки и о ранениях. Победит тот, кто вынесет клад.' : 'Передай устройство игроку ' + n + '. Следующий игрок нажимает кнопку, только когда предыдущий отвернулся.'}</p>
+<button type="button" data-act="ready" class="btn primary" style="width:100%;max-width:300px">Я игрок ${n}</button>
+<p style="margin:0;font-size:12px;color:#A9BDB9;max-width:300px">Ход: шаг, выстрел, кинжал или пропуск. Упёрся в стену — ход потрачен. Сопоставлять листы можно без траты хода.</p></div>`;
   }
 
   /* ---------- пауза и настройки ---------- */
@@ -306,7 +425,7 @@ ${saved ? `<button type="button" data-act="resume" class="btn primary">Прод�
     return `<div class="screen" style="padding:16px 20px;gap:16px">
 <header style="display:flex;justify-content:space-between;align-items:center;height:44px"><h1 class="serif" style="margin:0;font-size:26px">${inGame ? 'Пауза' : 'Настройки'}</h1>${inGame ? `<span style="font-size:12px;color:#A9BDB9">Ход ${S.moves} · партия сохранена</span>` : ''}</header>
 <nav aria-label="Партия" style="display:flex;flex-direction:column;gap:8px">
-${inGame ? `<button type="button" data-act="back" class="btn primary">Продолжить</button><div class="row"><button type="button" data-act="new" class="btn flex">Начать заново</button><button type="button" data-act="menu" class="btn flex">Выйти в меню</button></div>` : `<button type="button" data-act="back" class="btn primary">Назад</button>`}
+${inGame ? `<button type="button" data-act="back" class="btn primary">Продолжить</button><div class="row"><button type="button" data-act="restart" class="btn flex">Начать заново</button><button type="button" data-act="menu" class="btn flex">Выйти в меню</button></div>` : `<button type="button" data-act="back" class="btn primary">Назад</button>`}
 </nav>
 <section aria-labelledby="gm" class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:2px"><h2 id="gm" style="margin:0 0 4px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#A9BDB9;font-weight:600">Игра и экран</h2>
 ${sw('motion', 'Меньше анимации', 'Без тряски, вспышек и долгих переходов')}${sw('conflicts', 'Подсвечивать противоречия', 'Только между твоими записями, не по скрытой карте')}${sw('coach', 'Подсказки обучения', 'Короткие пояснения в первой партии')}</section>
@@ -322,7 +441,7 @@ ${sw('motion', 'Меньше анимации', 'Без тряски, вспыш
     S.frags.forEach((f) => Object.keys(f.cells).forEach((k) => { const p = kv(k); visited.add((p[0] + f.tw[0]) + ',' + (p[1] + f.tw[1])); }));
     // клетки листа А хранятся в мировых координатах (tw = 0,0)
     let cells = '', walls = '', objs = '', frames = '';
-    const trueObjs = { '2,5': 'pit', '3,1': 'pit', '5,2': 'chest', '4,2': 'sign', '0,4': 'exit' };
+    const trueObjs = {}; W.pits.forEach((k) => { trueObjs[k] = 'pit'; }); Object.keys(W.objs).forEach((k) => { trueObjs[k] = W.objs[k]; }); trueObjs[W.treasure] = 'chest'; trueObjs[W.exitCell] = 'exit';
     for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) {
       const k = x + ',' + y, v = visited.has(k);
       let bg = '#1C3538';
@@ -356,28 +475,32 @@ ${sw('motion', 'Меньше анимации', 'Без тряски, вспыш
     const views = [['both', 'Обе'], ['truth', 'Настоящая'], ['mine', 'Моя карта']].map((v) => `<button type="button" data-act="view" data-a="${v[0]}" aria-pressed="${endView === v[0]}" style="background:${endView === v[0] ? '#C59A49' : 'transparent'};color:${endView === v[0] ? '#14282B' : '#C9D6D3'}">${v[1]}</button>`).join('');
     const lg = (st, t) => `<li style="display:flex;align-items:center;gap:8px"><span aria-hidden="true" style="width:16px;height:12px;border-radius:2px;${st}"></span>${t}</li>`;
     return `<div class="screen" style="gap:12px">
-<header style="display:flex;flex-direction:column;gap:4px;flex:none"><span class="eyebrow">Итоги партии</span><h1 class="serif" style="margin:0;font-size:30px;line-height:1.1">Ларец вынесен</h1><p style="margin:0;font-size:13px;color:#C9D6D3">${S.moves} ходов · ${S.frags.length} ${S.frags.length === 1 ? 'лист' : 'лист' + (S.frags.length < 5 ? 'а' : 'ов')} · гипотез ${right + wrong}${right + wrong ? ', верных ' + right : ''}${unplaced ? ' · не закреплено листов: ' + unplaced : ''}</p></header>
-<div class="seg" role="group" aria-label="Что показать на карте">${views}</div>
+<header style="display:flex;flex-direction:column;gap:4px;flex:none"><span class="eyebrow">${D ? 'Дуэль · листы игрока ' + (endPlayer + 1) : 'Итоги партии'}</span><h1 class="serif" style="margin:0;font-size:30px;line-height:1.1">${D ? 'Победил игрок ' + (D.winner + 1) : 'Ларец вынесен'}</h1><p style="margin:0;font-size:13px;color:#C9D6D3">${S.moves} ходов · ${S.frags.length} ${S.frags.length === 1 ? 'лист' : 'лист' + (S.frags.length < 5 ? 'а' : 'ов')} · гипотез ${right + wrong}${right + wrong ? ', верных ' + right : ''}${unplaced ? ' · не закреплено листов: ' + unplaced : ''}</p></header>
+${D ? `<div class="seg" role="group" aria-label="Чьи листы показать">${[0, 1].map((i) => `<button type="button" data-act="player" data-a="${i}" aria-pressed="${endPlayer === i}" style="background:${endPlayer === i ? '#4EAAA1' : 'transparent'};color:${endPlayer === i ? '#14282B' : '#C9D6D3'}">Игрок ${i + 1}</button>`).join('')}</div>` : ''}<div class="seg" role="group" aria-label="Что показать на карте">${views}</div>
 <div class="sheet" style="box-shadow:0 12px 32px rgba(0,0,0,.4)"><div class="board" role="img" aria-label="${endView === 'mine' ? 'Твоя карта с гипотезами' : endView === 'truth' ? 'Настоящая карта лабиринта' : 'Настоящая карта поверх твоей'}">${cells}${walls}${objs}${frames}</div></div>
 <ul style="margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;font-size:12px;color:#C9D6D3;flex:none">${lg('background:#E6CF97', 'Где ты побывал')}${lg('border:2px solid #4EAAA1', 'Гипотеза верна')}${lg('border:2px dashed #E58A76', 'Ошибочная гипотеза')}${lg('border:2px dotted #7FD0C6', 'Где лист на самом деле')}</ul>
-<div style="margin-top:auto;display:flex;flex-direction:column;gap:8px"><button type="button" data-act="new" class="btn primary">Сыграть ещё</button><div class="row"><button type="button" data-act="atlas" class="btn flex">${endSaved ? 'В атласе ✓' : 'В атлас'}</button><button type="button" data-act="menu" class="btn flex">В меню</button></div></div></div>`;
+<div style="margin-top:auto;display:flex;flex-direction:column;gap:8px"><button type="button" data-act="${D ? 'duel' : 'new'}" class="btn primary">Сыграть ещё</button><div class="row">${D ? '' : `<button type="button" data-act="atlas" class="btn flex">${endSaved ? 'В атласе ✓' : 'В атлас'}</button>`}<button type="button" data-act="menu" class="btn flex">В меню</button></div></div></div>`;
   }
 
   /* ---------- рендер и события ---------- */
   function render() {
     document.body.classList.toggle('calm', settings.motion);
     const f = document.activeElement, key = f && f.dataset && f.dataset.act ? f.dataset.act + '|' + (f.dataset.a || '') + '|' + (f.dataset.b || '') : null;
-    app.innerHTML = screen === 'start' ? startHTML() : screen === 'settings' ? settingsHTML() : screen === 'end' ? endHTML() : gameHTML();
+    app.innerHTML = screen === 'handoff' ? handoffHTML() : screen === 'start' ? startHTML() : screen === 'settings' ? settingsHTML() : screen === 'end' ? endHTML() : gameHTML();
     if (key) { const els = app.querySelectorAll('[data-act]'); for (const el of els) if (el.dataset.act + '|' + (el.dataset.a || '') + '|' + (el.dataset.b || '') === key && !el.disabled) { el.focus({ preventScroll: true }); break; } }
   }
-  function newGame() { S = initialState(); LS.del('lab.save'); screen = 'game'; render(); persist(); }
+  function newGame() { if (lastMode === 'duel' && D) { newDuel(); return; } D = null; W = SOLO; lastMode = 'solo'; S = initialState(); LS.del('lab.save'); screen = 'game'; render(); persist(); }
+  function startSolo() { D = null; W = SOLO; lastMode = 'solo'; newGame(); }
   const A = {
-    new: newGame,
-    resume() { S = LS.get('lab.save', null) || initialState(); screen = 'game'; render(); },
+    new: startSolo,
+    restart: newGame,
+    duel: newDuel, aim() { if (!D || S.acted) return; set({ aim: !S.aim }); }, dagger, skip, endTurn, ready,
+    player(a) { endPlayer = Number(a); S = D.players[endPlayer]; render(); },
+    resume() { D = null; W = SOLO; lastMode = 'solo'; S = LS.get('lab.save', null) || initialState(); screen = 'game'; render(); },
     settings() { prevScreen = screen; screen = 'settings'; render(); },
     pause() { prevScreen = 'game'; screen = 'settings'; render(); },
     back() { screen = prevScreen === 'game' && S ? 'game' : 'start'; render(); },
-    menu() { screen = 'start'; render(); },
+    menu() { D = null; W = SOLO; lastMode = 'solo'; screen = 'start'; render(); },
     sw(a) { settings[a] = !settings[a]; LS.set('lab.settings', settings); render(); },
     up: () => pad(0, -1), down: () => pad(0, 1), left: () => pad(-1, 0), right: () => pad(1, 0),
     take, pin: togglePin, away: putAway,
