@@ -30,8 +30,6 @@ Out of the MVP for now: rivers, bombs, cement, the bear, a false treasure, onlin
 
 ## Duel with a host («Дуэль с ведущим»)
 
-> Planned, not built yet. This section follows the spec and the UX design (`.tlk/features/2026-11-04-duel-host-mode/`); names, keys and the on-screen layout are final only once the mockups are approved.
-
 The second duel mode, closer to the paper game: the game plays the human **host** («Ведущий») and **speaks** every result aloud. Players draw the map **on paper**; the app keeps no sheets for them.
 
 **Choosing a duel.** Starting a duel offers two modes, picked per match: the classic «Дуэль» (above, unchanged) or «Дуэль с ведущим». Tapping the duel button on the start screen opens a full-screen chooser with two equal cards, «Дуэль с ведущим» and «Классическая дуэль», plus «Отмена» (`Esc` also cancels). Each card starts its own flow.
@@ -39,28 +37,28 @@ The second duel mode, closer to the paper game: the game plays the human **host*
 **How a match goes**
 
 - Same rules, same random 6×6 labyrinth as the classic duel (pits in a cycle, treasure, hospital, arsenal, exit, wounds, bullets, daggers).
-- Before the first line there is a short intro screen (paper-and-pen reminder, voice status, «Начать игру»); that tap is also the user gesture browsers require before they will speak. The host then announces each player's starting cell type and who moves first as one line. The start cell is not marked on any map.
+- Before the first line there is a short intro screen (paper-and-pen reminder, voice status with its on/off switch, «Начать игру», «В меню»); that tap is also the user gesture browsers require before they will speak. The host then announces each player's starting cell type and who moves first as one line. The start cell is not marked on any map.
 - Both players are in front of the same device and hear the same announcements: the host's lines are **public**, so there is no «Pass the turn» screen.
-- The screen shows only whose turn it is («Ход игрока N»), that player's status, the available actions, and a **log of every host line** of the game. There is no map, no sheets, no overlay, no hypotheses.
+- The screen shows only whose turn it is («Ход игрока N»), that player's status (health, bullets, daggers, whether they carry the treasure), the available actions, the latest host line, and a **log of every host line** of the game (newest first). There is no map, no sheets, no overlay, no hypotheses.
 - Each turn is one action: step, shoot (aim, then direction), dagger strike, or skip. Unavailable actions are disabled with the reason shown inside the button («ранен», «нет патронов», «нет кинжалов»); a rejected keyboard action shows a short notice and keeps the turn. Shoot and dagger fire on one tap, with no confirmation and no undo.
 - The host says only what the paper-game host may say: the cell type or "wall", hit or miss, who is wounded, who picked up or dropped the treasure, the direction of a shot. Pit numbers, coordinates and the treasure location are never announced.
 - **Controls lock until the line is spoken.** After an action the host line is read to the end, and only then does the turn pass. A wall bump still spends the turn; an action that is rejected (for example, shooting with no bullets) does not.
-- Whoever carries the treasure out through the exit wins. The host announces the winner, and the results screen shows the **true map** and the winner, plus the full host log on a second tab. Drawing both players' routes over the results map is postponed to a later release.
+- Whoever carries the treasure out through the exit wins. The host announces the winner; once the line is spoken, «К итогам» opens the results screen: the winner, each player's turn count, the **true map** on the «Карта» tab and the full host log on the «Журнал» tab. «Сыграть ещё» starts a new host match, «В меню» returns to the start screen. Drawing both players' routes over the results map is not included.
 
 **Voice**
 
 - Voice is on by default (text always shows). The voice switch is in the turn-screen header and in Settings («Голос ведущего»). «Повторить» (repeat) sits on the latest-line card and re-speaks the last line without changing whose turn it is.
-- Speech uses the browser's built-in Web Speech API, so **it depends on the voices installed in your browser or OS**. The app looks for a Russian voice, then any voice of the same language, then a configured fallback language.
+- Speech uses the browser's built-in Web Speech API, so **it depends on the voices installed in your browser or OS**. The app looks for a `ru-RU` voice, then any Russian voice, then any English voice; Settings shows which one was found.
 - With no usable voice (or no `speechSynthesis` at all) the app stays silent and shows the note «Голос недоступен — только текст». The game never waits on speech that cannot play, and a stuck synthesizer cannot freeze a match.
 - The interface and host lines are Russian only for now; other languages are a separate planned feature.
 
-**Settings (host mode)** — all three are in Settings:
+**Settings (host mode)** — all three are in Settings (open it with the pause button or `Esc`) and are saved in `localStorage`:
 
 | Setting | Default | What it does |
 |---------|---------|--------------|
 | «Голос ведущего» | on | The host speaks every line. Off: text only, with no wait before the turn passes. Turning it off mid-line cuts the speech and unlocks the controls at once. |
 | «Пауза после хода» | on | After the turn passes, action controls and action keys stay disabled for 300 ms before the next player's controls unlock, so a stray second tap from the previous player cannot fire an irreversible action. Host mode only. Repeat, voice and pause keep working during the pause; other keys pressed during it are ignored silently. Applies with voice off too. |
-| «Говорить, чей ход» | off | On: after each action line the host also says «Ход игрока N», and the controls unlock only after that phrase. Off: the turn change is shown on screen only. |
+| «Говорить, чей ход» | off | On: after each action line the host also says «Ход игрока N» (the phrase is part of the same log line), and the controls unlock only after it. Off: the turn change is shown on screen only. |
 
 **Controls (host mode)**
 
@@ -79,8 +77,11 @@ The second duel mode, closer to the paper game: the game plays the human **host*
 - The Settings key legend lists these keys on its own «Дуэль с ведущим» line.
 - On a phone: touch buttons, with shoot and dagger separated from the step pad to avoid accidental taps.
 - The acting player's bullets and wounds are shown on the shared screen, so the opponent can see them (accepted trade-off).
-- There is no skip while the host is speaking. The way out is the voice switch: turning voice off cancels the current speech and unlocks the controls at once. While locked, only repeat, voice and `Esc` respond.
+- There is no «skip the line» button while the host is speaking. The ways out are the voice switch and the pause button / `Esc`: each cancels the current speech and unlocks the controls at once. While locked, only repeat, voice and pause respond.
+- In aim mode the step pad turns into a fire pad (red, «Огонь» in the centre): the next direction fires.
 
-The duel is not saved: closing the page ends the match.
+The duel is not saved: closing the page ends the match (the settings above are kept).
+
+**Code layout.** `host.js` holds the pure core (Russian message catalogue, rules engine, speech wrapper, turn controller) and has no DOM; the host screens and keys live in the fenced `host:start … host:end` block of `game.js`. Every host line comes from the catalogue in `host.js`. Tests run with Node, no dependencies: `node --test tests/`.
 
 Created from a design in Claude (Artifact "Лабиринт — полная партия" / "Labyrinth — full game").

@@ -8,7 +8,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
   };
-  let settings = Object.assign({ motion: false, conflicts: true, coach: true }, LS.get('lab.settings', {}));
+  let settings = Object.assign({ motion: false, conflicts: true, coach: true }, LabHost.DEFAULT_SETTINGS, LS.get('lab.settings', {}));
   let screen = 'start';
   let S = null;
   let prevScreen = 'start';
@@ -421,17 +421,20 @@ ${saved ? `<button type="button" data-act="resume" class="btn primary">Прод�
   /* ---------- пауза и настройки ---------- */
   function settingsHTML() {
     const sw = (k, label, sub) => `<div style="display:flex;justify-content:space-between;align-items:center;min-height:52px;gap:12px"><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:14px">${label}</span><span style="font-size:12px;line-height:1.35;color:#A9BDB9">${sub}</span></span><button type="button" role="switch" aria-checked="${settings[k]}" aria-label="${label}" data-act="sw" data-a="${k}" class="sw" style="background:${settings[k] ? '#4EAAA1' : '#3B4A4C'};justify-content:${settings[k] ? 'flex-end' : 'flex-start'}"><i></i></button></div>`;
-    const inGame = S && !S.won && prevScreen === 'game';
+    const hostPause = !!HS && prevScreen === 'hostGame';
+    const inGame = hostPause || (S && !S.won && prevScreen === 'game');
     return `<div class="screen" style="padding:16px 20px;gap:16px">
-<header style="display:flex;justify-content:space-between;align-items:center;height:44px"><h1 class="serif" style="margin:0;font-size:26px">${inGame ? 'Пауза' : 'Настройки'}</h1>${inGame ? `<span style="font-size:12px;color:#A9BDB9">Ход ${S.moves} · партия сохранена</span>` : ''}</header>
+<header style="display:flex;justify-content:space-between;align-items:center;height:44px"><h1 class="serif" style="margin:0;font-size:26px">${inGame ? 'Пауза' : 'Настройки'}</h1>${inGame && !hostPause ? `<span style="font-size:12px;color:#A9BDB9">Ход ${S.moves} · партия сохранена</span>` : ''}</header>
 <nav aria-label="Партия" style="display:flex;flex-direction:column;gap:8px">
 ${inGame ? `<button type="button" data-act="back" class="btn primary">Продолжить</button><div class="row"><button type="button" data-act="restart" class="btn flex">Начать заново</button><button type="button" data-act="menu" class="btn flex">Выйти в меню</button></div>` : `<button type="button" data-act="back" class="btn primary">Назад</button>`}
 </nav>
 <section aria-labelledby="gm" class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:2px"><h2 id="gm" style="margin:0 0 4px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#A9BDB9;font-weight:600">Игра и экран</h2>
 ${sw('motion', 'Меньше анимации', 'Без тряски, вспышек и долгих переходов')}${sw('conflicts', 'Подсвечивать противоречия', 'Только между твоими записями, не по скрытой карте')}${sw('coach', 'Подсказки обучения', 'Короткие пояснения в первой партии')}</section>
+${hostSettingsHTML(sw)}
 <section aria-labelledby="rl" class="card" style="padding:12px 14px;font-size:13px;line-height:1.5;color:#C9D6D3"><h2 id="rl" style="margin:0 0 6px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#A9BDB9;font-weight:600">Правила</h2>
 Ход — на одну клетку. Стена: ты стоишь, ход засчитан. Ямы связаны в цикл и уносят на новый лист без привязки. Сопоставление — только сдвиг, без поворотов; закрепление — твоя гипотеза, приложение её не подтверждает. Победа: взять ларец и выйти через выход.</section>
-<p style="margin:auto 0 0;font-size:12px;color:#A9BDB9;text-align:center">Клавиши: <kbd>←↑→↓</kbd> / <kbd>WASD</kbd> · <kbd>M</kbd> режим · <kbd>F</kbd> взять · <kbd>Space</kbd> закрепить · <kbd>H</kbd> скрыть · <kbd>Q</kbd><kbd>E</kbd> листы · <kbd>Esc</kbd> пауза</p></div>`;
+<p style="margin:auto 0 0;font-size:12px;color:#A9BDB9;text-align:center">Клавиши: <kbd>←↑→↓</kbd> / <kbd>WASD</kbd> · <kbd>M</kbd> режим · <kbd>F</kbd> взять · <kbd>Space</kbd> закрепить · <kbd>H</kbd> скрыть · <kbd>Q</kbd><kbd>E</kbd> листы · <kbd>Esc</kbd> пауза</p>
+${hostLegendHTML()}</div>`;
   }
 
   /* ---------- итоги ---------- */
@@ -486,22 +489,22 @@ ${D ? `<div class="seg" role="group" aria-label="Чьи листы показа�
   function render() {
     document.body.classList.toggle('calm', settings.motion);
     const f = document.activeElement, key = f && f.dataset && f.dataset.act ? f.dataset.act + '|' + (f.dataset.a || '') + '|' + (f.dataset.b || '') : null;
-    app.innerHTML = screen === 'handoff' ? handoffHTML() : screen === 'start' ? startHTML() : screen === 'settings' ? settingsHTML() : screen === 'end' ? endHTML() : gameHTML();
+    app.innerHTML = screen === 'handoff' ? handoffHTML() : screen === 'start' ? startHTML() + chooserHTML() : screen === 'settings' ? settingsHTML() : screen === 'end' ? endHTML() : screen === 'hostIntro' ? hostIntroHTML() : screen === 'hostGame' ? hostGameHTML() : screen === 'hostEnd' ? hostEndHTML() : gameHTML();
     if (key) { const els = app.querySelectorAll('[data-act]'); for (const el of els) if (el.dataset.act + '|' + (el.dataset.a || '') + '|' + (el.dataset.b || '') === key && !el.disabled) { el.focus({ preventScroll: true }); break; } }
   }
   function newGame() { if (lastMode === 'duel' && D) { newDuel(); return; } D = null; W = SOLO; lastMode = 'solo'; S = initialState(); LS.del('lab.save'); screen = 'game'; render(); persist(); }
   function startSolo() { D = null; W = SOLO; lastMode = 'solo'; newGame(); }
   const A = {
     new: startSolo,
-    restart: newGame,
-    duel: newDuel, aim() { if (!D || S.acted) return; set({ aim: !S.aim }); }, dagger, skip, endTurn, ready,
+    restart() { if (HS) startHost(); else newGame(); },
+    duel() { if (screen === 'end') newDuel(); else openChooser(); }, aim() { if (!D || S.acted) return; set({ aim: !S.aim }); }, dagger, skip, endTurn, ready,
     player(a) { endPlayer = Number(a); S = D.players[endPlayer]; render(); },
     resume() { D = null; W = SOLO; lastMode = 'solo'; S = LS.get('lab.save', null) || initialState(); screen = 'game'; render(); },
     settings() { prevScreen = screen; screen = 'settings'; render(); },
     pause() { prevScreen = 'game'; screen = 'settings'; render(); },
-    back() { screen = prevScreen === 'game' && S ? 'game' : 'start'; render(); },
-    menu() { D = null; W = SOLO; lastMode = 'solo'; screen = 'start'; render(); },
-    sw(a) { settings[a] = !settings[a]; LS.set('lab.settings', settings); render(); },
+    back() { screen = HS && prevScreen === 'hostGame' ? 'hostGame' : prevScreen === 'game' && S ? 'game' : 'start'; render(); },
+    menu() { endHost(); D = null; W = SOLO; lastMode = 'solo'; screen = 'start'; render(); },
+    sw(a) { settings[a] = !settings[a]; LS.set('lab.settings', settings); if (a === 'voice' && HS) HS.ctl.voiceChanged(); render(); },
     up: () => pad(0, -1), down: () => pad(0, 1), left: () => pad(-1, 0), right: () => pad(1, 0),
     take, pin: togglePin, away: putAway,
     hide() { set({ hidden: !S.hidden }); },
@@ -514,9 +517,216 @@ ${D ? `<div class="seg" role="group" aria-label="Чьи листы показа�
     view(a) { endView = a; render(); },
     atlas() { endSaved = true; const at = LS.get('lab.atlas', []); at.push({ moves: S.moves, sheets: S.frags.length, at: Date.now() }); LS.set('lab.atlas', at); render(); }
   };
+  /* host:start */
+  /* Host-driven duel UI. Text comes from LabHost.t(...) with literal keys only; English comments only.
+     Session HS is separate from the classic duel state D, so classic paths are never entered. */
+  const t = LabHost.t;
+  let HS = null, chooser = false, speaker = null;
+  const hostTimers = { setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: (i) => clearTimeout(i) };
+  const PLAYER = { 1: { col: '#E2B866', shape: '50%' }, 2: { col: '#7FD0C6', shape: '6px' } };
+  const KEYDIRS = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
+  const NOTICES = () => ({ wounded: t('ui.notice.wounded'), noBullets: t('ui.notice.noBullets'), noDaggers: t('ui.notice.noDaggers') });
+  const REASONS = () => ({ wounded: t('ui.reason.wounded'), noBullets: t('ui.reason.noBullets'), noDaggers: t('ui.reason.noDaggers') });
+
+  function theSpeaker() {
+    if (!speaker) {
+      const w = typeof window !== 'undefined' ? window : {};
+      speaker = LabHost.createSpeaker({ synth: w.speechSynthesis, Utter: w.SpeechSynthesisUtterance, timers: hostTimers, getRate: () => 1, lang: 'ru-RU', fallbackLang: 'en' });
+    }
+    return speaker;
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.addEventListener) {
+    window.speechSynthesis.addEventListener('voiceschanged', () => { if (HS || screen === 'settings') render(); });
+  }
+
+  function endHost() {
+    if (HS) { HS.ctl.dispose(); HS = null; }
+    chooser = false;
+  }
+  function startHost() {
+    endHost();
+    const w = genWorld(3);
+    W = w; D = null; lastMode = 'host';
+    const spawns = [0, 1].map(() => kv(w.spawn.splice(Math.floor(Math.random() * w.spawn.length), 1)[0]));
+    const match = LabHost.createMatch(w, spawns);
+    const ctl = LabHost.createController({ match, speaker: theSpeaker(), timers: hostTimers, settings: () => settings, onChange: () => render() });
+    HS = { match, ctl, tab: 'map', notice: null };
+    screen = 'hostIntro'; render();
+  }
+  function openChooser() {
+    chooser = true; render();
+    const el = app.querySelector && app.querySelector('[data-act="duelHost"]');
+    if (el && el.focus) el.focus();
+  }
+
+  /* run one action attempt: clear the notice, try, show the reason of a rejection (not logged, not spoken) */
+  function hostDo(fn) {
+    if (!HS) return;
+    HS.notice = null;
+    const r = fn(HS.ctl);
+    if (r && r.ok === false && NOTICES()[r.reason]) HS.notice = r.reason;
+    render();
+  }
+  function hostAim() {
+    hostDo((ctl) => {
+      if (ctl.phase !== 'idle') return null;
+      if (ctl.toggleAim()) return null;
+      const la = LabHost.legalActions(HS.match).shoot;
+      return la.enabled ? null : { ok: false, reason: la.reason };
+    });
+  }
+  function hostStep(dx, dy) { if (HS && HS.ctl.phase === 'idle') hostDo((ctl) => ctl.dir(dx, dy)); }
+  function hostTry(a) { if (HS && HS.ctl.phase === 'idle') hostDo((ctl) => ctl.act(a)); }
+  function toggleVoice() {
+    settings.voice = !settings.voice; LS.set('lab.settings', settings);
+    if (HS) HS.ctl.voiceChanged();
+    render();
+  }
+  function hostPauseOpen() {
+    HS.ctl.pause(); prevScreen = 'hostGame'; screen = 'settings'; render();
+  }
+
+  Object.assign(A, {
+    duelHost() { chooser = false; startHost(); },
+    duelClassic() { endHost(); newDuel(); },
+    chooserCancel() { chooser = false; render(); },
+    hostBegin() { if (HS && screen === 'hostIntro') { screen = 'hostGame'; HS.ctl.begin(); render(); } },
+    hUp: () => hostStep(0, -1), hDown: () => hostStep(0, 1), hLeft: () => hostStep(-1, 0), hRight: () => hostStep(1, 0),
+    hAim: hostAim,
+    hDagger: () => hostTry({ type: 'dagger' }),
+    hSkip: () => hostTry({ type: 'skip' }),
+    hRepeat() { if (HS) { HS.ctl.repeat(); render(); } },
+    hVoice: toggleVoice,
+    hPause() { if (HS) hostPauseOpen(); },
+    hResults() { if (HS && HS.ctl.phase === 'finished') { HS.tab = 'map'; screen = 'hostEnd'; render(); } },
+    hAgain: startHost,
+    hTab(a) { if (HS) { HS.tab = a === 'log' ? 'log' : 'map'; render(); } }
+  });
+
+  /* keys are read by e.code so they work on any keyboard layout; returns true when the event was consumed */
+  function hostKey(e) {
+    if (screen === 'start' && chooser) {
+      if (e.code === 'Escape' || e.key === 'Escape') { e.preventDefault(); chooser = false; render(); return true; }
+      return false;
+    }
+    if (!HS || screen !== 'hostGame') return false;
+    const c = e.code, ctl = HS.ctl, idle = ctl.phase === 'idle', d = KEYDIRS[c];
+    if (d) { e.preventDefault(); hostStep(d[0], d[1]); return true; }
+    if (c === 'KeyX') { e.preventDefault(); if (idle) hostAim(); return true; }
+    if (c === 'KeyK') { e.preventDefault(); hostTry({ type: 'dagger' }); return true; }
+    if (c === 'KeyP') { e.preventDefault(); hostTry({ type: 'skip' }); return true; }
+    if (c === 'KeyR') { e.preventDefault(); ctl.repeat(); render(); return true; }
+    if (c === 'KeyV') { e.preventDefault(); toggleVoice(); return true; }
+    if (c === 'Escape') { e.preventDefault(); if (ctl.cancelAim()) render(); else hostPauseOpen(); return true; }
+    return false;
+  }
+
+  /* ---------- markup ---------- */
+  const speakerIcon = (s, off) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/>${off ? '<path d="M17 9l5 6M22 9l-5 6"/>' : '<path d="M16.5 8.5a5 5 0 0 1 0 7"/>'}</svg>`;
+  const badge = (p, size) => p
+    ? `<span aria-hidden="true" style="flex:none;width:${size}px;height:${size}px;border-radius:${PLAYER[p].shape};background:${PLAYER[p].col};color:#14282B;font-weight:700;font-size:${Math.round(size * 0.55)}px;display:flex;align-items:center;justify-content:center">${p}</span>`
+    : `<span aria-hidden="true" style="flex:none;width:${size}px;height:${size}px;border-radius:50%;border:1.5px solid #6B8582;color:#A9BDB9;display:flex;align-items:center;justify-content:center">${speakerIcon(Math.round(size * 0.6))}</span>`;
+  const logItem = (e) => `<li style="display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:1.35">${badge(e.p, 22)}<span style="min-width:0">${e.text}</span></li>`;
+  const voiceBtn = () => `<button type="button" data-act="hVoice" aria-pressed="${settings.voice}" aria-label="${settings.voice ? t('ui.aria.voiceOn') : t('ui.aria.voiceOff')}" style="flex:none;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:#1B3437;border:1px solid #2F4D4C;color:${settings.voice ? '#EFE3C5' : '#E58A76'}">${speakerIcon(20, !settings.voice)}</button>`;
+
+  function voiceStatusText() {
+    const st = theSpeaker().status();
+    if (!st.available) return t('ui.set.status.none');
+    if (st.how === 'fallback') return t('ui.set.status.fallback', { lang: st.voice.lang });
+    return t('ui.set.status.found');
+  }
+
+  function chooserHTML() {
+    if (!chooser) return '';
+    const card = (act, title, sub, bd) => `<button type="button" data-act="${act}" class="card" style="width:100%;min-height:88px;text-align:left;display:flex;flex-direction:column;gap:4px;color:#EFE3C5;border-color:${bd}"><span class="serif" style="font-size:20px;font-weight:700">${title}</span><span style="font-size:13px;line-height:1.4;color:#C9D6D3">${sub}</span></button>`;
+    return `<div class="overlay" role="dialog" aria-modal="true" aria-labelledby="chtitle"><span id="chtitle" class="eyebrow">${t('ui.chooser.title')}</span>${card('duelHost', t('ui.chooser.host.title'), t('ui.chooser.host.sub'), '#C59A49')}${card('duelClassic', t('ui.chooser.classic.title'), t('ui.chooser.classic.sub'), '#B65B48')}<button type="button" data-act="chooserCancel" class="btn" style="width:100%">${t('ui.chooser.cancel')}</button></div>`;
+  }
+
+  function hostIntroHTML() {
+    return `<div class="screen" style="padding:24px 20px;gap:16px">
+<span class="eyebrow">${t('ui.intro.eyebrow')}</span>
+<h1 class="serif" style="margin:0;font-size:34px;line-height:1.15">${t('ui.intro.title')}</h1>
+<p style="margin:0;font-size:15px;line-height:1.5;color:#C9D6D3">${t('ui.intro.body')}</p>
+<section class="card" aria-label="${t('ui.intro.voice')}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:64px"><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:600">${t('ui.intro.voice')}</span><span role="status" style="font-size:12.5px;line-height:1.35;color:#C9D6D3">${theSpeaker().status().how === 'exact' ? t('ui.intro.voiceOk') : voiceStatusText()}</span></span>${voiceBtn()}</section>
+<div style="margin-top:auto;display:flex;flex-direction:column;gap:10px"><button type="button" data-act="hostBegin" class="btn primary">${t('ui.intro.start')}</button><button type="button" data-act="menu" class="btn">${t('ui.btn.menu')}</button></div></div>`;
+  }
+
+  function hostGameHTML() {
+    const m = HS.match, ctl = HS.ctl, ph = ctl.phase, idle = ph === 'idle', over = m.winner !== null, aim = ctl.aim && idle;
+    const pn = m.turn + 1, me = m.players[m.turn], la = LabHost.legalActions(m), pc = aim ? '#B65B48' : PLAYER[pn].col;
+    const chips = [me.wounded ? t('ui.status.woundedNoTreasure') : t('ui.status.healthy'), t('ui.bullets', { n: me.bullets }), t('ui.daggers', { n: me.daggers })];
+    if (me.carrying) chips.push(t('ui.status.carrying'));
+    const state = ph === 'speaking' ? `<span style="display:flex;align-items:center;gap:6px;color:#E2B866">${speakerIcon(16)}${t('ui.speaking')}</span>` : aim ? `<span style="color:#E58A76">${t('ui.banner.aim')}</span>` : over ? `<span>${t('ui.banner.over')}</span>` : '';
+    const latest = m.log[m.log.length - 1], older = m.log.slice(0, -1).reverse();
+    const reasons = REASONS();
+
+    const pbg = aim ? '#4A2A26' : '#1B3437', pbd = aim ? '#B65B48' : '#3B5C5A';
+    const pad = (act, icon, label, shootLabel) => `<button type="button" data-act="${act}"${idle ? '' : ' disabled'} aria-label="${aim ? shootLabel : label}" style="width:52px;height:52px;display:flex;align-items:center;justify-content:center;border-radius:10px;color:#EFE3C5;background:${pbg};border:1px solid ${pbd};opacity:${idle ? 1 : .4}">${arrow(icon)}</button>`;
+    const abtn = (act, label, st, extra, style) => {
+      const on = idle && st.enabled, why = idle && !st.enabled ? reasons[st.reason] : '';
+      return `<button type="button" data-act="${act}"${on ? '' : ' disabled'}${extra || ''} style="width:100%;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0 8px;border-radius:8px;font-size:14px;font-weight:600;color:#EFE3C5;${style}"><span style="opacity:${on ? 1 : .4}">${label}</span>${why ? `<span style="font-size:11px;line-height:1.1;font-weight:500;color:#E58A76">${why}</span>` : ''}</button>`;
+    };
+    const controls = over
+      ? `<button type="button" data-act="hResults" class="btn primary"${ph === 'finished' ? '' : ' disabled'} style="flex:none;opacity:${ph === 'finished' ? 1 : .4}">${t('ui.btn.results')}</button>`
+      : `<div class="hctl" style="display:flex;gap:24px;align-items:flex-start;justify-content:center;flex:none">
+<div role="group" aria-label="${t('ui.aria.pad')}" style="display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,52px);gap:6px;flex:none"><span></span>${pad('hUp', 'up', t('ui.aria.up'), t('ui.aria.shootUp'))}<span></span>${pad('hLeft', 'left', t('ui.aria.left'), t('ui.aria.shootLeft'))}<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#E58A76">${aim ? t('ui.pad.fire') : ''}</span>${pad('hRight', 'right', t('ui.aria.right'), t('ui.aria.shootRight'))}<span></span>${pad('hDown', 'down', t('ui.aria.down'), t('ui.aria.shootDown'))}<span></span></div>
+<div class="hact" role="group" aria-label="${t('ui.aria.actions')}" style="display:flex;flex-direction:column;gap:16px;width:166px;flex:none">${abtn('hDagger', t('ui.btn.dagger'), la.dagger, '', 'background:#1B3437;border:1px solid #B65B48')}${abtn('hAim', t('ui.btn.shoot'), la.shoot, ` aria-pressed="${aim}"`, `background:${aim ? '#B65B48' : '#1B3437'};border:1px solid ${aim ? '#B65B48' : '#3B5C5A'}`)}${abtn('hSkip', t('ui.btn.skip'), la.skip, '', 'background:transparent;border:1px solid #2F4D4C;font-weight:500')}</div></div>`;
+
+    return `<div class="screen" style="padding:16px;gap:10px">
+<header style="display:flex;justify-content:space-between;align-items:center;height:44px;gap:12px;flex:none"><span class="eyebrow" style="min-width:0">${t('ui.header.eyebrow')} · ${t('ui.header.turn', { n: m.log.length })}</span><div style="display:flex;gap:8px;flex:none">${voiceBtn()}<button type="button" data-act="hPause" aria-label="${t('ui.aria.pause')}" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:#1B3437;border:1px solid #2F4D4C;color:#EFE3C5"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6v12"/><path d="M15 6v12"/></svg></button></div></header>
+<p class="sr" aria-live="polite">${over ? '' : t('ui.turn.banner', { p: pn })}</p>
+<section class="card" style="flex:none;display:flex;gap:12px;align-items:flex-start;min-height:76px;border:2px solid ${pc}">${badge(pn, 32)}<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><h1 class="serif" style="margin:0;font-size:30px;line-height:1.1">${over ? t('ui.end.winner', { p: pn }) : t('ui.turn.banner', { p: pn })}</h1><div style="display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px;color:#C9D6D3">${chips.map((c) => `<span>${c}</span>`).join('')}</div><div style="font-size:12.5px;line-height:1.35;min-height:17px">${state}</div></div></section>
+<section aria-live="polite" aria-label="${t('ui.host.label')}" class="card" style="flex:none;display:flex;gap:10px;align-items:flex-start;min-height:96px;border:1.5px solid ${ph === 'speaking' ? '#E2B866' : '#2F4D4C'}"><div style="flex:none;display:flex;flex-direction:column;align-items:center;gap:8px">${badge(latest ? latest.p : 0, 32)}<button type="button" data-act="hRepeat" aria-label="${t('ui.aria.repeat')}" title="${t('ui.btn.repeat')}" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:#14282B;border:1px solid #3B5C5A;color:#EFE3C5">${speakerIcon(18)}</button></div><div style="min-width:0;display:flex;flex-direction:column;gap:2px"><span class="eyebrow">${t('ui.host.label')}</span><p style="margin:0;font-size:18px;line-height:1.35">${latest ? latest.text : ''}</p></div></section>
+${theSpeaker().status().available ? '' : `<p role="status" style="margin:0;flex:none;font-size:12.5px;color:#E2B866">${t('ui.notice.noVoice')}</p>`}
+<ol role="log" aria-live="off" tabindex="0" aria-label="${t('ui.log.title')}" class="card" style="flex:1 1 120px;min-height:120px;margin:0;list-style:none;overflow-y:auto;display:flex;flex-direction:column;gap:8px">${older.map(logItem).join('')}</ol>
+<p role="status" style="margin:0;flex:none;height:18px;font-size:12.5px;line-height:18px;color:#E58A76">${HS.notice ? NOTICES()[HS.notice] : ''}</p>
+${controls}
+</div>`;
+  }
+
+  function hostMapHTML() {
+    let cells = '', walls = '', objs = '';
+    const trueObjs = {};
+    W.pits.forEach((k) => { trueObjs[k] = 'pit'; });
+    Object.keys(W.objs).forEach((k) => { trueObjs[k] = W.objs[k]; });
+    trueObjs[W.treasure] = 'chest'; trueObjs[W.exitCell] = 'exit';
+    for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) {
+      cells += `<div class="abs" style="left:${x * C}px;top:${y * C}px;width:56px;height:56px;background:#EFE3C5;box-shadow:inset 0 0 0 .5px rgba(38,50,56,.18)"></div>`;
+      const edges = [['h', x, y], ['v', x, y]];
+      if (y === 5) edges.push(['h', x, 6]);
+      if (x === 5) edges.push(['v', 6, y]);
+      edges.forEach((e) => {
+        const key = e[0] + ':' + e[1] + ',' + e[2];
+        if (W.pass.has(key) || key === W.exitEdge) return;
+        const r = e[0] === 'h' ? { l: e[1] * C - 1, t: e[2] * C - 3, w: C + 2, h: 6 } : { l: e[1] * C - 3, t: e[2] * C - 1, w: 6, h: C + 2 };
+        walls += box(r, 'background:#141C1F;border-radius:2px;box-shadow:0 0 0 1.5px #EFE3C5,0 0 0 3px rgba(11,23,25,.35)');
+      });
+    }
+    Object.keys(trueObjs).forEach((k) => { const p = kv(k); objs += `<div class="abs" style="left:${p[0] * C + 14}px;top:${p[1] * C + 14}px;width:28px;height:28px">${objIcon(trueObjs[k], 28, { pit: '#B65B48', exit: '#263238' }, 1.8)}</div>`; });
+    return `<div class="sheet" style="box-shadow:0 12px 32px rgba(0,0,0,.4)"><div class="board" role="img" aria-label="${t('ui.end.mapLabel')}">${cells}${walls}${objs}</div></div>`;
+  }
+
+  function hostEndHTML() {
+    const m = HS.match, w = m.winner === null ? 1 : m.winner + 1, tab = HS.tab;
+    const tb = (id, label) => `<button type="button" data-act="hTab" data-a="${id}" aria-pressed="${tab === id}" style="background:${tab === id ? '#C59A49' : 'transparent'};color:${tab === id ? '#14282B' : '#C9D6D3'}">${label}</button>`;
+    return `<div class="screen" style="gap:12px">
+<header style="display:flex;flex-direction:column;gap:6px;flex:none"><span class="eyebrow">${t('ui.end.eyebrow')}</span><div style="display:flex;gap:12px;align-items:center">${badge(w, 32)}<h1 class="serif" style="margin:0;font-size:30px;line-height:1.1">${t('ui.end.winner', { p: w })}</h1></div><p style="margin:0;font-size:13px;color:#C9D6D3">${t('ui.end.turns', { a: m.players[0].moves, b: m.players[1].moves })}</p></header>
+<div class="seg" role="group" aria-label="${t('ui.end.tabs')}">${tb('map', t('ui.end.tab.map'))}${tb('log', t('ui.end.tab.log'))}</div>
+${tab === 'log' ? `<ol role="log" aria-live="off" tabindex="0" aria-label="${t('ui.log.title')}" class="card" style="flex:1 1 200px;min-height:200px;margin:0;list-style:none;overflow-y:auto;display:flex;flex-direction:column;gap:8px">${m.log.slice().reverse().map(logItem).join('')}</ol>` : hostMapHTML()}
+<div style="margin-top:auto;display:flex;flex-direction:column;gap:8px"><button type="button" data-act="hAgain" class="btn primary">${t('ui.btn.again')}</button><button type="button" data-act="menu" class="btn">${t('ui.btn.menu')}</button></div></div>`;
+  }
+
+  function hostSettingsHTML(sw) {
+    return `<section aria-labelledby="hs" class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:2px"><h2 id="hs" style="margin:0 0 4px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#A9BDB9;font-weight:600">${t('ui.set.title')}</h2>
+${sw('voice', t('ui.set.voice'), t('ui.set.voice.sub'))}<p role="status" style="margin:0 0 6px;font-size:12px;line-height:1.35;color:#C9D6D3">${voiceStatusText()}</p>${sw('settle', t('ui.set.settle'), t('ui.set.settle.sub'))}${sw('speakTurn', t('ui.set.speakTurn'), t('ui.set.speakTurn.sub'))}</section>`;
+  }
+  const hostLegendHTML = () => `<p style="margin:6px 0 0;font-size:12px;line-height:1.6;color:#A9BDB9;text-align:center">${t('ui.set.keys')}</p>`;
+  /* host:end */
+
   app.addEventListener('click', (e) => { const t = e.target.closest('[data-act]'); if (!t || t.disabled) return; const fn = A[t.dataset.act]; if (fn) fn(t.dataset.a, t.dataset.b); });
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (hostKey(e)) return;
     if (screen === 'game' && S && !S.won) {
       const dir = { ArrowUp: [0, -1], w: [0, -1], W: [0, -1], ArrowDown: [0, 1], s: [0, 1], S: [0, 1], ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0], ArrowRight: [1, 0], d: [1, 0], D: [1, 0] }[e.key];
       if (dir) { e.preventDefault(); pad(dir[0], dir[1]); return; }
