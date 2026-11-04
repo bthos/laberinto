@@ -26,7 +26,7 @@ jobs:
       - name: Stage app files
         run: |
           mkdir _site
-          cp index.html game.js style.css _site/
+          cp index.html game.js host.js style.css _site/
           touch _site/.nojekyll
 
       - uses: actions/configure-pages@v5
